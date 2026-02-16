@@ -11,6 +11,6 @@ RUN apt-get update \
 
 COPY main.py /app/main.py
 
-RUN pip install --no-cache-dir requests python-dateutil
+RUN pip install --no-cache-dir requests python-dateutil google-genai
 
 CMD ["python", "/app/main.py"]

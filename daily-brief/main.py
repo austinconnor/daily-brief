@@ -71,7 +71,7 @@ def load_config() -> Config:
         miniflux_url=os.getenv("MINIFLUX_URL", "http://miniflux:8080").rstrip("/"),
         miniflux_api_token=get_required_env("MINIFLUX_API_TOKEN"),
         gemini_api_key=get_required_env("GEMINI_API_KEY"),
-        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash").strip() or "gemini-2.5-flash",
+        gemini_model=os.getenv("GEMINI_MODEL", "gemini-2.0-flash-preview").strip() or "gemini-2.0-flash-preview",
         discord_webhook_url=get_required_env("DISCORD_WEBHOOK_URL"),
         discord_username=os.getenv("DISCORD_USERNAME", "AI Morning Brief").strip() or "AI Morning Brief",
         run_at_local_time=run_at_local_time,
@@ -163,36 +163,28 @@ def build_prompt(entries: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+from google import genai
+from google.genai import types
+
+# ... (keep existing imports) ...
+
 def call_gemini(config: Config, prompt: str) -> str:
-    endpoint = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"{config.gemini_model}:generateContent?key={config.gemini_api_key}"
-    )
+    client = genai.Client(api_key=config.gemini_api_key)
 
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.3,
-            "maxOutputTokens": 900,
-        },
-    }
-
-    response = requests.post(endpoint, json=payload, timeout=90)
-    response.raise_for_status()
-
-    body = response.json()
-    candidates = body.get("candidates") or []
-    if not candidates:
-        raise RuntimeError("Gemini response has no candidates")
-
-    content = candidates[0].get("content") or {}
-    parts = content.get("parts") or []
-    chunks = [part.get("text", "").strip() for part in parts if part.get("text")]
-    summary = "\n".join(chunk for chunk in chunks if chunk).strip()
-    if not summary:
-        raise RuntimeError("Gemini response did not contain summary text")
-
-    return summary
+    try:
+        response = client.models.generate_content(
+            model=config.gemini_model,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.3,
+                max_output_tokens=2000,
+            ),
+        )
+        if not response.text:
+            raise RuntimeError("Gemini response is empty")
+        return response.text
+    except Exception as e:
+        raise RuntimeError(f"Gemini API error: {e}")
 
 
 def split_message(text: str, chunk_size: int = 1900) -> list[str]:
@@ -261,9 +253,24 @@ def run_job(config: Config, tz_info) -> None:
     post_message_chunks(config, f"{header}\n\n{summary}")
 
 
+import sys
+
+# ... existing imports ...
+
 def main() -> None:
     config = load_config()
     tz_info = get_local_tz(config.tz_name)
+
+    # Manual trigger support
+    if "--now" in sys.argv:
+        log("Manual trigger detected. Running job immediately.")
+        try:
+            run_job(config, tz_info)
+            log("Manual job completed successfully.")
+        except Exception as exc:
+            log(f"Manual job failed: {exc}")
+            sys.exit(1)
+        return
 
     log(
         "Daily brief service started "
@@ -273,6 +280,7 @@ def main() -> None:
 
     while True:
         wait_seconds = seconds_until_run(config.run_at_local_time, tz_info)
+        # ... rest of loop ...
         next_run_at = datetime.now(tz_info) + timedelta(seconds=wait_seconds)
         log(f"Next run scheduled at {next_run_at.strftime('%Y-%m-%d %H:%M:%S %Z')}")
         time.sleep(wait_seconds)

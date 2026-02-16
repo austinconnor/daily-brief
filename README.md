@@ -32,7 +32,7 @@ Containerized RSS aggregation + Gemini summarization + Discord webhook posting.
    docker compose up -d
    ```
 3. Open Miniflux UI:
-   - `http://UNRAID_IP:8081`
+   - `http://UNRAID_IP:8300`
 4. In Miniflux: **Settings -> API Keys** -> create key.
 5. Put key into `MINIFLUX_API_TOKEN` in `.env` and restart the brief service:
    ```bash
