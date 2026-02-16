@@ -1,0 +1,50 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  miniflux:
+    image: miniflux/miniflux:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8081:8080"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
+      RUN_MIGRATIONS: "1"
+      CREATE_ADMIN: "1"
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      BASE_URL: ${MINIFLUX_BASE_URL}
+
+  ai-daily-brief:
+    build:
+      context: ./daily-brief
+    restart: unless-stopped
+    depends_on:
+      miniflux:
+        condition: service_started
+    environment:
+      TZ: ${TZ:-UTC}
+      MINIFLUX_URL: ${MINIFLUX_URL:-http://miniflux:8080}
+      MINIFLUX_API_TOKEN: ${MINIFLUX_API_TOKEN}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      DISCORD_USERNAME: ${DISCORD_USERNAME:-AI Morning Brief}
+      RUN_AT_LOCAL_TIME: ${RUN_AT_LOCAL_TIME:-08:00}
+      LOOKBACK_HOURS: ${LOOKBACK_HOURS:-24}
+      MAX_ITEMS: ${MAX_ITEMS:-60}
